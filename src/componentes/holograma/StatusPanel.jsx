@@ -1,35 +1,33 @@
 import React from "react";
 import { Wifi, Monitor, Globe, User } from "lucide-react";
 
-const defaultStatusItems = [
-  { label: "SISTEMA", value: "Ativo", icon: Wifi },
-  { label: "CONEXÃO", value: "Conectado", icon: Monitor },
-  { label: "NAVEGADOR", value: "Pronto", icon: Globe },
-  { label: "FALANTE", value: "Carmen", icon: User },
+const statusItems = [
+  { label: "SISTEMA", value: "Ativo", icon: Wifi, valueClass: "text-emerald-400" },
+  { label: "CONEXÃO", value: "Conectado", icon: Monitor, valueClass: "text-emerald-400" },
+  { label: "NAVEGADOR", value: "Pronto", icon: Globe, valueClass: "text-emerald-400" },
+  { label: "FALANTE", value: "Carmen", icon: User, valueClass: "text-red-300" },
 ];
 
-export default function StatusPanel({ items = defaultStatusItems }) {
-  const normalizedItems = items.map((item, index) => ({
-    ...item,
-    icon: item.icon || defaultStatusItems[index % defaultStatusItems.length].icon,
-  }));
-
+export default function StatusPanel() {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 w-full max-w-4xl">
-      {normalizedItems.map((item) => (
+    <div className="grid w-full grid-cols-2 gap-3 xl:grid-cols-4">
+      {statusItems.map((item) => (
         <div
           key={item.label}
-          className="border border-gray-800 bg-gray-900/50 rounded-lg px-4 py-3 backdrop-blur-sm"
+          className="rounded-[22px] border border-[#1b2530] bg-[#0b1016] px-4 py-4 shadow-[0_0_22px_rgba(0,0,0,0.16)]"
         >
-          <div className="flex items-center gap-2 mb-1">
-            <item.icon className="w-3 h-3 text-red-500/70" />
-            <span className="text-[10px] font-mono tracking-[0.2em] text-gray-500 uppercase">
+          <div className="mb-2 flex items-center gap-2">
+            <item.icon className="h-4 w-4 text-cyan-400" />
+            <span className="text-[11px] font-mono tracking-[0.22em] text-slate-500 uppercase">
               {item.label}
             </span>
           </div>
-          <span className="text-sm font-semibold text-gray-200">
+          <span className={`text-[1.65rem] font-semibold ${item.valueClass}`}>
             {item.value}
           </span>
+          <div className="mt-3 h-[3px] w-full rounded-full bg-[#16202a]">
+            <div className="h-full w-2/3 rounded-full bg-[linear-gradient(90deg,#4ade80,#22c55e)]" />
+          </div>
         </div>
       ))}
     </div>

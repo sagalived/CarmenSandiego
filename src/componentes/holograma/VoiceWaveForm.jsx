@@ -1,6 +1,13 @@
 import React from "react";
 import { motion } from "framer-motion";
 
+/**
+ * @typedef {Object} VoiceWaveformProps
+ * @property {boolean} isActive
+ * @property {"red"|"cyan"} [color]
+ */
+
+/** @param {VoiceWaveformProps} props */
 export default function VoiceWaveform({ isActive, color = "red" }) {
   const bars = 24;
   const colorClass = color === "red" ? "bg-red-500" : "bg-cyan-400";
