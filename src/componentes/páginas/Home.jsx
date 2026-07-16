@@ -1,8 +1,6 @@
 import React, { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import HologramAvatar from "@/componentes/holograma/HologramaAvatar";
-import VoiceWaveform from "@/componentes/holograma/VoiceWaveForm";
-import StatusPanel from "@/componentes/holograma/StatusPanel";
 import MicButton from "@/componentes/holograma/MicButton";
 import { getAssistantStatus } from "@/componentes/holograma/status";
 import { generateCarmenAiReply } from "@/componentes/holograma/ai";
@@ -143,6 +141,8 @@ export default function Home() {
   const recognitionRef = useRef(/** @type {any} */ (null));
   const audioRef = useRef(/** @type {HTMLAudioElement|null} */ (null));
   const previewCardRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const matrixCanvasRef = useRef(/** @type {HTMLCanvasElement | null} */ (null));
+  const petalsCanvasRef = useRef(/** @type {HTMLCanvasElement | null} */ (null));
 
   const status = getAssistantStatus({ isSpeaking, isProcessing, isListening });
 
@@ -446,62 +446,272 @@ export default function Home() {
     };
   }, []);
 
+  React.useEffect(() => {
+    const matrixCanvas = matrixCanvasRef.current;
+    const petalsCanvas = petalsCanvasRef.current;
+    if (!matrixCanvas || !petalsCanvas) {
+      return undefined;
+    }
+
+    const mCtx = matrixCanvas.getContext("2d");
+    const pCtx = petalsCanvas.getContext("2d");
+    if (!mCtx || !pCtx) {
+      return undefined;
+    }
+
+    const chars = "01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン".split("");
+    const fontSize = 14;
+    let mW = 0;
+    let mH = 0;
+    let pW = 0;
+    let pH = 0;
+    /** @type {number[]} */
+    let drops = [];
+    /** @type {number[]} */
+    let speeds = [];
+    /** @type {number | null} */
+    let animationFrame = null;
+
+    class Petal {
+      constructor() {
+        this.reset(true);
+      }
+
+      reset(initial = false) {
+        this.size = 6 + Math.random() * 14;
+        if (initial) {
+          this.x = Math.random() * pW;
+          this.y = Math.random() * pH;
+        } else {
+          this.x = Math.random() * pW;
+          this.y = -30;
+        }
+        this.fallSpeed = 0.3 + Math.random() * 0.8;
+        this.swingSpeed = 0.002 + Math.random() * 0.008;
+        this.swingOffset = Math.random() * Math.PI * 2;
+        this.angle = Math.random() * Math.PI * 2;
+        this.rotation = (Math.random() - 0.5) * 0.03;
+        this.opacity = 0.28 + Math.random() * 0.4;
+      }
+
+      update() {
+        this.y += this.fallSpeed;
+        this.x += Math.sin(Date.now() * this.swingSpeed + this.swingOffset) * 0.6;
+        this.angle += this.rotation;
+        if (this.y > pH + 24) {
+          this.reset();
+        }
+      }
+
+      draw(ctx) {
+        const s = this.size;
+        ctx.save();
+        ctx.globalAlpha = this.opacity;
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = "rgba(255, 60, 160, 0.35)";
+        ctx.fillStyle = "rgba(255, 70, 170, 0.72)";
+        ctx.beginPath();
+        ctx.moveTo(0, -s);
+        ctx.bezierCurveTo(s * 0.8, -s * 0.5, s * 0.9, s * 0.4, s * 0.25, s * 1.0);
+        ctx.bezierCurveTo(0, s * 1.2, -s * 0.25, s * 1.0, -s * 0.9, s * 0.4);
+        ctx.bezierCurveTo(-s * 0.8, -s * 0.5, 0, -s, 0, -s);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    class Dust {
+      constructor() {
+        this.x = Math.random() * pW;
+        this.y = Math.random() * pH;
+        this.vx = (Math.random() - 0.5) * 0.18;
+        this.vy = -0.02 - Math.random() * 0.08;
+        this.r = 0.6 + Math.random() * 1.2;
+        this.opacity = 0.03 + Math.random() * 0.08;
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        if (this.y < -10) {
+          this.y = pH + 10;
+          this.x = Math.random() * pW;
+        }
+        if (this.x < -10) this.x = pW + 10;
+        if (this.x > pW + 10) this.x = -10;
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.opacity;
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = "rgba(0,255,180,0.2)";
+        ctx.fillStyle = "rgba(80,255,210,0.45)";
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    /** @type {Petal[]} */
+    let petals = [];
+    /** @type {Dust[]} */
+    let dust = [];
+
+    const resizeAll = () => {
+      mW = matrixCanvas.width = window.innerWidth;
+      mH = matrixCanvas.height = window.innerHeight;
+      pW = petalsCanvas.width = window.innerWidth;
+      pH = petalsCanvas.height = window.innerHeight;
+
+      const columns = Math.floor(mW / fontSize);
+      drops = Array.from({ length: columns }, () => Math.random() * -100);
+      speeds = Array.from({ length: columns }, () => 0.12 + Math.random() * 0.23);
+      petals = Array.from({ length: Math.min(110, Math.floor((pW * pH) / 12000)) }, () => new Petal());
+      dust = Array.from({ length: 40 }, () => new Dust());
+    };
+
+    const drawMatrix = () => {
+      mCtx.fillStyle = "rgba(0,0,0,0.08)";
+      mCtx.fillRect(0, 0, mW, mH);
+      mCtx.font = `${fontSize}px 'Courier New', monospace`;
+
+      for (let i = 0; i < drops.length; i += 1) {
+        const char = chars[Math.floor(Math.random() * chars.length)];
+        const x = i * fontSize;
+        const y = drops[i] * fontSize;
+        mCtx.shadowBlur = 12;
+        mCtx.shadowColor = "rgba(0,255,180,0.2)";
+        mCtx.fillStyle = Math.random() > 0.95
+          ? "rgba(180,255,230,0.9)"
+          : `rgba(0,255,180,${0.15 + Math.random() * 0.35})`;
+        mCtx.fillText(char, x, y);
+        mCtx.shadowBlur = 0;
+        drops[i] += speeds[i];
+        if (y > mH && Math.random() > 0.975) {
+          drops[i] = 0;
+          speeds[i] = 0.12 + Math.random() * 0.23;
+        }
+      }
+    };
+
+    const render = () => {
+      drawMatrix();
+      pCtx.clearRect(0, 0, pW, pH);
+
+      dust.forEach((d) => {
+        d.update();
+        d.draw(pCtx);
+      });
+
+      petals.sort((a, b) => a.size - b.size);
+      petals.forEach((p) => {
+        p.update();
+        p.draw(pCtx);
+      });
+
+      pCtx.fillStyle = `rgba(0,255,180,${Math.sin(Date.now() * 0.0005) * 0.002 + 0.004})`;
+      pCtx.fillRect(0, 0, pW, pH);
+
+      animationFrame = window.requestAnimationFrame(render);
+    };
+
+    resizeAll();
+    window.addEventListener("resize", resizeAll);
+    animationFrame = window.requestAnimationFrame(render);
+
+    return () => {
+      window.removeEventListener("resize", resizeAll);
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-[#06090d] text-white overflow-hidden relative">
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_top,rgba(163,20,20,0.18),transparent_32%),radial-gradient(circle_at_70%_35%,rgba(14,165,233,0.12),transparent_22%),linear-gradient(180deg,#070b10_0%,#040608_100%)]" />
-      <div
-        className="fixed inset-0 opacity-[0.08] pointer-events-none"
-        style={{
-          backgroundImage: "linear-gradient(rgba(40,62,78,0.45) 1px, transparent 1px), linear-gradient(90deg, rgba(40,62,78,0.35) 1px, transparent 1px)",
-          backgroundSize: "72px 72px"
-        }}
-      />
+    <div className="relative min-h-screen w-screen max-w-full overflow-x-hidden bg-black text-white">
+      <canvas ref={matrixCanvasRef} className="fixed inset-0 z-0 h-screen w-screen" aria-hidden="true" />
+      <canvas ref={petalsCanvasRef} className="pointer-events-none fixed inset-0 z-[1] h-screen w-screen" aria-hidden="true" />
+      <div className="pointer-events-none fixed inset-0 z-[2] bg-[radial-gradient(circle_at_center,rgba(0,0,0,0),rgba(0,0,0,0.32))]" />
 
       <div className="relative z-10 flex min-h-screen">
-        <aside className="hidden xl:flex w-[118px] shrink-0 border-r border-[#16202a] bg-[#05070b]/90 backdrop-blur-xl flex-col justify-between">
-          <div>
-            <div className="relative h-[74px] flex items-center justify-center border-b border-[#16202a]">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-red-600/40 bg-red-950/30 shadow-[0_0_18px_rgba(220,38,38,0.22)] overflow-hidden">
+        <aside className="sticky top-2 self-start z-30 flex h-[calc(100vh-16px)] w-[220px] shrink-0 ml-1.5">
+          <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[16px] border border-cyan-200/45 bg-[#03111a] p-2 shadow-[0_0_0_1px_rgba(125,211,252,0.16),0_18px_28px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(207,250,254,0.18)]">
+            <div className="mb-2 flex items-center justify-center">
+              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-red-500/45 bg-red-950/35 shadow-[0_0_16px_rgba(239,68,68,0.22)]">
                 <img src="/carmen-holograma.png" alt="Carmen Logo" className="h-full w-full object-cover object-top opacity-90 mix-blend-screen saturate-150" />
               </div>
             </div>
 
-            <nav className="px-3 py-6 space-y-2.5">
+            <nav className="space-y-1.5">
               {navItems.map((item) => (
-                <button
+                <motion.button
                   key={item.label}
                   type="button"
-                  className={`relative w-full rounded-[18px] border px-3 py-4 text-left transition-colors ${
-                    item.active
-                      ? "border-red-500/60 bg-red-950/30 text-red-300 shadow-[0_0_18px_rgba(220,38,38,0.16)]"
-                      : "border-[#18222d] bg-[#090d12]/70 text-slate-500 hover:border-red-500/30 hover:text-slate-200"
-                  }`}
+                  whileHover={item.active
+                    ? { y: -2, scale: 1.02, boxShadow: "inset 0 1px 0 rgba(209,250,229,0.62), inset 0 -2px 0 rgba(0,0,0,0.56), 0 0 26px rgba(52,211,153,0.55), 0 0 34px rgba(248,113,113,0.4)" }
+                    : { y: -2, scale: 1.02, boxShadow: "inset 0 1px 0 rgba(224,242,254,0.62), inset 0 -2px 0 rgba(0,0,0,0.62), 0 0 20px rgba(34,211,238,0.34)" }}
+                  whileTap={{ y: 1, scale: 0.985 }}
+                  transition={{ type: "spring", stiffness: 320, damping: 18, mass: 0.62 }}
+                  className="group relative flex h-[46px] w-full items-center gap-2.5 overflow-hidden rounded-[14px] border px-3.5 py-2 text-left font-mono text-[12px] uppercase tracking-[0.08em]"
+                  style={item.active
+                    ? {
+                        borderColor: "rgba(110, 255, 190, 0.9)",
+                        background: "linear-gradient(180deg, rgba(52,132,94,1), rgba(26,76,57,1))",
+                        boxShadow: "inset 0 1px 0 rgba(209,250,229,0.55), inset 0 -2px 0 rgba(0,0,0,0.56), 0 0 20px rgba(52,211,153,0.45), 0 0 26px rgba(248,113,113,0.35)"
+                      }
+                    : {
+                        borderColor: "rgba(120, 225, 255, 0.82)",
+                        background: "linear-gradient(180deg, rgba(36,104,132,1), rgba(18,56,75,1))",
+                        boxShadow: "inset 0 1px 0 rgba(224,242,254,0.52), inset 0 -2px 0 rgba(0,0,0,0.62), 0 3px 8px rgba(0,0,0,0.45)"
+                      }}
                 >
-                  {item.active && <span className="absolute inset-y-2 left-0 w-[2px] rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.65)]" />}
-                  <item.icon className="mx-auto mb-2 h-5 w-5" />
-                  <span className="carmen-label block text-[10px] font-semibold uppercase tracking-[0.16em]">{item.label}</span>
-                </button>
+                  <span className="pointer-events-none absolute inset-0 rounded-[14px] border border-white/15" />
+                  <span className="pointer-events-none absolute left-[1px] right-[1px] top-[1px] h-[38%] rounded-t-[13px] bg-[linear-gradient(180deg,rgba(255,255,255,0.24),transparent)] transition-opacity duration-220 group-hover:opacity-100" />
+                  {item.active && <span className="pointer-events-none absolute inset-y-1 left-0 w-[2px] rounded-full bg-emerald-200 shadow-[0_0_12px_rgba(110,231,183,0.95)]" />}
+                  {item.active && <span className="pointer-events-none absolute right-0 top-0 h-5 w-5 bg-[radial-gradient(circle_at_top_right,rgba(248,113,113,0.85),transparent_62%)]" />}
+                  <span className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-active:opacity-100" style={{ boxShadow: item.active ? "inset 0 0 18px rgba(110,255,190,0.2)" : "inset 0 0 18px rgba(120,225,255,0.24)" }} />
+                  <item.icon className={`h-4.5 w-4.5 ${item.active ? "text-emerald-50" : "text-cyan-50"}`} />
+                  <span className={`flex-1 font-semibold ${item.active ? "bg-[linear-gradient(90deg,#dcfce7,#fecaca)] bg-clip-text text-transparent" : "text-cyan-50"}`}>
+                    {item.label}
+                  </span>
+                </motion.button>
               ))}
             </nav>
-          </div>
 
-          <div className="m-3 rounded-2xl border border-red-500/30 bg-[#0b0f15] px-4 py-5 text-left shadow-[0_0_20px_rgba(127,29,29,0.18)]">
-            <p className="carmen-label text-[10px] uppercase tracking-[0.28em] text-red-400">Carmen AI v2.7.3</p>
-            <p className="mt-3 text-[11px] uppercase tracking-[0.18em] text-slate-500">ID: CA-00942</p>
-            <p className="mt-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">Nível de acesso</p>
-            <p className="mt-1 text-sm font-semibold uppercase tracking-[0.2em] text-red-300">Admin</p>
+            <div className="mx-1 mb-2 mt-2 h-px bg-[linear-gradient(90deg,transparent,rgba(125,211,252,0.32),transparent)]" />
+
+            <div className="relative mt-auto rounded-[8px] border border-red-500/35 bg-[#09070c] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_2px_8px_rgba(0,0,0,0.45)]">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-red-400">
+                Carmen AI <span className="font-normal text-red-100/58">v2.7.3</span>
+              </p>
+              <div className="mt-1.5 flex items-center justify-between font-mono text-[9px] tracking-[0.08em]">
+                <span className="text-red-100/50">ID</span>
+                <span className="font-medium text-red-100/85">CA-00942</span>
+              </div>
+              <div className="mt-1.5 border-t border-red-400/10 pt-1.5">
+                <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.08em]">
+                  <span className="text-red-100/50">Nível de acesso</span>
+                  <span className="text-[10px] font-bold text-red-400">Admin</span>
+                </div>
+              </div>
+            </div>
           </div>
         </aside>
 
         <div className="flex-1 px-4 py-4 md:px-6 xl:px-8">
-          <header className="relative rounded-[22px] border border-[#16202a] bg-[#060a0f]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl md:px-5 md:py-4">
+          <header className="relative rounded-[22px] border border-red-500/18 bg-[#060a0f]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl md:px-5 md:py-4">
             <div className="pointer-events-none absolute inset-2 rounded-[18px] border border-red-500/8" />
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-4 md:gap-6">
                 <div className="hidden h-12 w-24 items-center justify-center rounded-[18px] border border-red-500/30 bg-red-950/25 md:flex overflow-hidden">
                   <img src="/carmen-holograma.png" alt="Carmen Logo" className="h-[250%] w-full object-cover object-top opacity-80 mix-blend-screen saturate-150" style={{ objectPosition: "50% 15%" }} />
                 </div>
-                <div className="carmen-display flex items-center gap-3 text-[1.75rem] font-semibold uppercase tracking-[0.14em] md:text-[2rem] 2xl:text-[2.15rem]">
+                <div className="carmen-display flex items-center gap-2 whitespace-nowrap text-[1.45rem] font-semibold uppercase tracking-[0.12em] md:gap-3 md:text-[1.85rem] 2xl:text-[2rem]">
                   <span className="text-red-500">Carmen AI</span>
                   <span className="text-slate-500">•</span>
                   <span className="text-slate-200">Holograma</span>
@@ -512,13 +722,13 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setShowChat(!showChat)}
-                  className="rounded-2xl border border-[#1a2430] bg-[#090d12] p-3 text-slate-400 transition-colors hover:border-red-500/40 hover:text-white"
+                  className="rounded-2xl border border-red-900/50 bg-[#090d12] p-3 text-red-100/60 transition-colors hover:border-red-500/40 hover:text-white"
                 >
                   <MessageSquare className="h-5 w-5" />
                 </button>
                 <button
                   type="button"
-                  className="relative rounded-2xl border border-[#1a2430] bg-[#090d12] p-3 text-slate-400 transition-colors hover:border-red-500/40 hover:text-white"
+                  className="relative rounded-2xl border border-red-900/50 bg-[#090d12] p-3 text-red-100/60 transition-colors hover:border-red-500/40 hover:text-white"
                 >
                   <Bell className="h-5 w-5" />
                   <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
@@ -530,319 +740,173 @@ export default function Home() {
           </header>
 
           <main className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_390px] 2xl:grid-cols-[minmax(0,1.62fr)_420px]">
-            <section className="relative rounded-[30px] border border-[#16202a] bg-[#070b10]/92 p-4 shadow-[0_25px_60px_rgba(0,0,0,0.42)] backdrop-blur-xl md:p-6">
-              <div className="pointer-events-none absolute inset-3 rounded-[24px] border border-cyan-500/8" />
-              <div className="grid gap-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_120px] 2xl:grid-cols-[minmax(0,1fr)_132px]">
-                  <div className="relative rounded-[28px] border border-cyan-500/20 bg-[linear-gradient(180deg,rgba(8,18,27,0.98),rgba(5,10,15,0.98))] p-3 md:p-4 2xl:p-5 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.05),0_0_0_1px_rgba(127,29,29,0.08)]">
-                    <div className="pointer-events-none absolute inset-3 rounded-[22px] border border-cyan-400/8" />
-                    <div className="mb-4 flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                      <span className="rounded-full border border-red-500/20 bg-red-950/20 px-3 py-1 text-red-400">ID: Carmen_AI</span>
-                      <span className="rounded-full border border-cyan-500/20 bg-cyan-950/20 px-3 py-1 text-cyan-300">Versão 2.7.3</span>
-                    </div>
+            <section className="relative flex items-start justify-center rounded-[30px] p-2 md:p-3">
+              <div className="w-full max-w-[660px] 2xl:max-w-[700px]">
+                <HologramAvatar
+                  isSpeaking={isSpeaking}
+                  isListening={isListening}
+                  status={status}
+                />
 
-                    <div className="mx-auto max-w-[620px] 2xl:max-w-[680px]">
-                      <HologramAvatar
-                        isSpeaking={isSpeaking}
-                        isListening={isListening}
-                        status={status}
-                      />
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-center gap-6 px-4">
-                      <div className="h-8 flex-1 max-w-[190px]">
-                        <VoiceWaveform isActive={isSpeaking} color="red" />
-                        <VoiceWaveform isActive={isListening} color="cyan" />
-                      </div>
-                      <div className="h-px flex-1 bg-[linear-gradient(90deg,transparent,rgba(239,68,68,0.6),transparent)]" />
-                    </div>
-
-                    <div className="mt-4 flex justify-center">
-                      <MicButton
-                        isListening={isListening}
-                        isSpeaking={isSpeaking}
-                        onToggle={toggleListening}
-                        disabled={isProcessing}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-1">
-                    <div className="rounded-[22px] border border-red-500/20 bg-[#0a0f15] p-4 shadow-[0_0_24px_rgba(127,29,29,0.12)]">
-                      <p className="carmen-label text-[10px] uppercase tracking-[0.28em] text-slate-500">Status</p>
-                      <p className="mt-4 text-lg font-semibold uppercase tracking-[0.18em] text-emerald-400">Online</p>
-                      <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">Pronta para rastrear</p>
-                    </div>
-                    <div className="rounded-[22px] border border-red-500/20 bg-[#0a0f15] p-4 shadow-[0_0_24px_rgba(127,29,29,0.12)]">
-                      <p className="carmen-label text-[10px] uppercase tracking-[0.28em] text-red-400">Protocolo</p>
-                      <p className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-cyan-300">128-bit</p>
-                      <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">Canal seguro ativo</p>
-                    </div>
-                    <div className="rounded-[22px] border border-red-500/20 bg-[#0a0f15] p-4 shadow-[0_0_24px_rgba(127,29,29,0.12)]">
-                      <p className="carmen-label text-[10px] uppercase tracking-[0.28em] text-slate-500">Radar</p>
-                      <div className="mt-4 grid grid-cols-6 gap-1">
-                        {Array.from({ length: 18 }).map((_, index) => (
-                          <div
-                            key={index}
-                            className="h-8 rounded-sm bg-[linear-gradient(180deg,rgba(16,185,129,0.8),rgba(16,185,129,0.06))]"
-                            style={{ opacity: 0.25 + ((index % 6) + 1) / 8 }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                <div className="mt-4 flex justify-center">
+                  <MicButton
+                    isListening={isListening}
+                    isSpeaking={isSpeaking}
+                    onToggle={toggleListening}
+                    disabled={isProcessing}
+                  />
                 </div>
-
-                <AnimatePresence mode="wait">
-                  {(response || isProcessing) && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      className="rounded-[24px] border border-red-500/20 bg-[#090d12]/90 px-5 py-4 shadow-[0_0_24px_rgba(127,29,29,0.14)]"
-                    >
-                      {isProcessing ? (
-                        <div className="flex items-center gap-3 text-sm uppercase tracking-[0.22em] text-slate-400">
-                          <div className="flex gap-1.5">
-                            <div className="h-2 w-2 rounded-full bg-red-500 animate-bounce" />
-                            <div className="h-2 w-2 rounded-full bg-red-500 animate-bounce" style={{ animationDelay: "0.1s" }} />
-                            <div className="h-2 w-2 rounded-full bg-red-500 animate-bounce" style={{ animationDelay: "0.2s" }} />
-                          </div>
-                          Processando sinal do jogador
-                        </div>
-                      ) : (
-                        <p className="text-sm leading-7 text-slate-200 md:text-base">
-                          {response}
-                        </p>
-                      )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="rounded-2xl border border-[#18222d] bg-[#090d12] px-4 py-3 text-xs uppercase tracking-[0.18em] text-slate-500">
-                    {transcript && !isProcessing ? `Jogador: "${transcript}"` : "Aguardando comando de voz"}
-                  </div>
-                  <div className="rounded-2xl border border-[#18222d] bg-[#090d12] px-4 py-3 text-xs uppercase tracking-[0.18em] text-slate-500">
-                    Fonte ativa: {imageBoard?.source || "painel local"}
-                  </div>
-                </div>
-
-                <StatusPanel />
               </div>
             </section>
 
-            <aside className="relative rounded-[30px] border-2 border-dashed border-red-500/40 bg-[#0a0d12]/95 p-5 md:p-6 shadow-[0_25px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl flex flex-col h-full">
-              <div className="flex flex-col h-full">
-                <div className="flex flex-col items-center justify-center gap-3 border-b border-red-500/20 pb-6 pt-2">
-                  <Upload className="h-8 w-8 text-red-300" />
-                  <h2 className="carmen-display text-[1.35rem] font-semibold uppercase tracking-[0.14em] text-red-300">Exportar arquivo</h2>
+            <aside className="relative overflow-hidden rounded-[28px] border border-red-400/25 bg-[linear-gradient(180deg,rgba(26,8,12,0.96),rgba(11,6,10,0.96))] p-4 shadow-[0_0_30px_rgba(220,38,38,0.14),inset_0_0_0_1px_rgba(252,165,165,0.08)] md:p-5">
+              <div className="pointer-events-none absolute inset-2 rounded-[22px] border border-red-200/10" />
+
+              <div className="relative flex items-center justify-center gap-3 border-b border-red-300/20 pb-5 pt-1">
+                <Upload className="h-7 w-7 text-red-200" />
+                <h2 className="carmen-display text-[1.9rem] font-semibold uppercase tracking-[0.08em] text-red-100">
+                  Exportar arquivo
+                </h2>
+              </div>
+
+              <div className="relative mt-5 space-y-5">
+                <div>
+                  <p className="carmen-label mb-3 text-xs uppercase tracking-[0.2em] text-red-100/50">Selecione o arquivo</p>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between rounded-xl border border-red-200/15 bg-[#120a10] px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(252,165,165,0.06)]">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-300/30 bg-red-500/10 text-red-200">
+                          <FileText className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-100">relatorio_visual.pdf</p>
+                          <p className="text-[11px] text-slate-400">2.4 MB</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setExportFormat("pdf"); setTimeout(handleExport, 0); }}
+                        disabled={!imageBoard || exportBusy}
+                        className="flex items-center gap-2 rounded-lg border border-red-200/25 bg-[linear-gradient(180deg,rgba(70,18,28,0.9),rgba(36,10,16,0.9))] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-red-100 transition-all hover:border-red-200/45 hover:text-white disabled:opacity-50"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Exportar
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-xl border border-red-200/15 bg-[#120a10] px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(252,165,165,0.06)]">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-300/30 bg-red-500/10 text-red-200">
+                          <FileImage className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-100">saida_imagem.png</p>
+                          <p className="text-[11px] text-slate-400">1.8 MB</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setExportFormat("png"); setTimeout(handleExport, 0); }}
+                        disabled={!imageBoard || exportBusy}
+                        className="flex items-center gap-2 rounded-lg border border-red-200/25 bg-[linear-gradient(180deg,rgba(70,18,28,0.9),rgba(36,10,16,0.9))] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-red-100 transition-all hover:border-red-200/45 hover:text-white disabled:opacity-50"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Exportar
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-xl border border-red-200/15 bg-[#120a10] px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(252,165,165,0.06)]">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-orange-300/30 bg-orange-500/10 text-orange-200">
+                          <FileJson className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-100">dados_brutos.json</p>
+                          <p className="text-[11px] text-slate-400">3.1 MB</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setExportFormat("json"); setTimeout(handleExport, 0); }}
+                        disabled={!imageBoard || exportBusy}
+                        className="flex items-center gap-2 rounded-lg border border-red-200/25 bg-[linear-gradient(180deg,rgba(70,18,28,0.9),rgba(36,10,16,0.9))] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-red-100 transition-all hover:border-red-200/45 hover:text-white disabled:opacity-50"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Exportar
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="mt-5 space-y-5">
-                  <div>
-                    <div className="mb-4">
-                      <p className="carmen-label text-xs uppercase tracking-[0.24em] text-slate-500 mb-3">Selecione o arquivo</p>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between rounded-xl border border-[#1b2530] bg-[#0d1218] p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/20 text-red-400">
-                              <FileText className="h-4 w-4" />
-                            </div>
-                            <div>
-                              <p className="text-xs font-semibold text-slate-200">relatorio_visual.pdf</p>
-                              <p className="text-[10px] text-slate-500">2.4 MB</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => { setExportFormat("pdf"); setTimeout(handleExport, 0); }}
-                            disabled={!imageBoard || exportBusy}
-                            className="flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-                          >
-                            <Download className="h-3 w-3" />
-                            Exportar
-                          </button>
-                        </div>
-                        
-                        <div className="flex items-center justify-between rounded-xl border border-[#1b2530] bg-[#0d1218] p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
-                              <FileImage className="h-4 w-4" />
-                            </div>
-                            <div>
-                              <p className="text-xs font-semibold text-slate-200">saida_imagem.png</p>
-                              <p className="text-[10px] text-slate-500">1.8 MB</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => { setExportFormat("png"); setTimeout(handleExport, 0); }}
-                            disabled={!imageBoard || exportBusy}
-                            className="flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-                          >
-                            <Download className="h-3 w-3" />
-                            Exportar
-                          </button>
-                        </div>
+                <div>
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-red-100/55">
+                    <span>Progresso da exportação</span>
+                    <span>{imageBoard ? `${exportBusy ? exportProgress : 100}%` : "0%"}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-300">
+                    {imageBoard ? exportLabel : "Exportando..."}
+                  </p>
+                  <div className="mt-2 rounded-full border border-rose-200/25 bg-[#1b0f13] p-[3px] shadow-[0_0_14px_rgba(251,113,133,0.2)]">
+                    <div
+                      className="h-2.5 rounded-full bg-[linear-gradient(90deg,#f97316_0%,#fb7185_50%,#f59e0b_100%)] transition-all"
+                      style={{ width: `${imageBoard ? (exportBusy ? exportProgress : 100) : 0}%` }}
+                    />
+                  </div>
+                </div>
 
-                        <div className="flex items-center justify-between rounded-xl border border-[#1b2530] bg-[#0d1218] p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/20 text-orange-400">
-                              <FileJson className="h-4 w-4" />
-                            </div>
-                            <div>
-                              <p className="text-xs font-semibold text-slate-200">dados_brutos.json</p>
-                              <p className="text-[10px] text-slate-500">3.1 MB</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => { setExportFormat("json"); setTimeout(handleExport, 0); }}
-                            disabled={!imageBoard || exportBusy}
-                            className="flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-                          >
-                            <Download className="h-3 w-3" />
-                            Exportar
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 space-y-3">
-                      {imageHistory.length === 0 && (
-                        <div className="flex items-center gap-3 rounded-2xl border border-[#1b2530] bg-[#0d1218] px-4 py-4 text-slate-500 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.015)]">
-                          <Search className="h-5 w-5 text-red-300" />
-                          <div>
-                            <p className="text-sm text-slate-300">Nenhuma busca visual registrada</p>
-                            <p className="carmen-label text-xs uppercase tracking-[0.18em]">Use um pedido de imagem para alimentar o painel</p>
-                          </div>
+                <div>
+                  <p className="carmen-label text-xs uppercase tracking-[0.2em] text-red-100/55">Prévia do arquivo</p>
+                  <div
+                    ref={previewCardRef}
+                    className="mt-3 rounded-[20px] border border-red-200/25 bg-[linear-gradient(180deg,rgba(33,12,18,0.96),rgba(18,7,12,0.96))] p-3 shadow-[inset_0_0_0_1px_rgba(252,165,165,0.1)]"
+                  >
+                    <div className="aspect-[16/11] overflow-hidden rounded-xl border border-red-200/20 bg-[#130a10]">
+                      {imageBoard ? (
+                        <img
+                          src={imageBoard.imageUrl}
+                          alt={imageBoard.title}
+                          className="h-full w-full object-cover object-center"
+                          referrerPolicy="no-referrer"
+                          onError={() => setImageLoadError(true)}
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center px-5 text-center text-sm text-red-100/45">
+                          Sem referência visual disponível.
                         </div>
                       )}
-
-                      {imageHistory.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`w-full rounded-2xl border px-4 py-3 transition-colors ${
-                            selectedHistoryId === item.id
-                              ? "border-red-500/45 bg-red-950/20 shadow-[0_0_24px_rgba(127,29,29,0.16)]"
-                              : "border-[#1b2530] bg-[#0d1218] hover:border-red-500/25"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <button type="button" onClick={() => handleSelectHistory(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-950/30 text-red-300">
-                                {item.source === "ai-pollinations" ? <Upload className="h-5 w-5" /> : <Globe className="h-5 w-5" />}
-                              </div>
-                              <div className="min-w-0">
-                                {editingHistoryId === item.id ? (
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      value={renameDraft}
-                                      onChange={(event) => setRenameDraft(event.target.value)}
-                                      className="w-full rounded-lg border border-red-500/30 bg-[#111821] px-2 py-1 text-sm text-slate-100 outline-none"
-                                    />
-                                    <button type="button" onClick={() => handleSaveRename(item.id)} className="text-emerald-300">
-                                      <Check className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <p className="truncate text-sm text-slate-200">{item.displayName}</p>
-                                )}
-                                <p className="carmen-label text-[11px] uppercase tracking-[0.16em] text-slate-500">
-                                  {getSourceLabel(item.source)} • {formatPanelTime(item.createdAt)}
-                                </p>
-                              </div>
-                            </button>
-                            <div className="flex items-center gap-2">
-                              <button type="button" onClick={() => handleToggleFavorite(item.id)} className={`${item.favorite ? "text-yellow-300" : "text-slate-500 hover:text-yellow-300"}`}>
-                                <Star className="h-4 w-4" fill={item.favorite ? "currentColor" : "none"} />
-                              </button>
-                              <button type="button" onClick={() => handleStartRename(item)} className="text-slate-500 hover:text-slate-200">
-                                <Pencil className="h-4 w-4" />
-                              </button>
-                              <button type="button" onClick={() => handleSelectHistory(item)} className="text-red-300">
-                                <Pin className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
                     </div>
-                  </div>
 
-                  <div>
-                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.22em] text-slate-500">
-                      <span>Progresso da exportação</span>
-                      <span>{imageBoard ? `${exportBusy ? exportProgress : 100}%` : "0%"}</span>
-                    </div>
-                    <div className="mt-3 h-4 rounded-full border border-red-500/30 bg-[#12080a] p-[3px]">
-                      <div
-                        className="h-full rounded-full bg-[linear-gradient(90deg,#ff7b7b,#ff4d57)] transition-all"
-                        style={{ width: `${imageBoard ? (exportBusy ? exportProgress : 100) : 0}%` }}
-                      />
-                    </div>
-                    <p className="mt-3 text-sm text-slate-300">
-                      {imageBoard ? exportLabel : "Peça uma imagem para preencher o quadro com uma nova pista visual."}
-                    </p>
-                  </div>
+                    {imageLoadError && (
+                      <p className="mt-3 text-xs text-rose-300">
+                        A imagem não carregou nesta tentativa. Abra em Fonte ou faça nova consulta.
+                      </p>
+                    )}
 
-                  <div>
-                    <p className="carmen-label text-xs uppercase tracking-[0.24em] text-slate-500">Prévia do arquivo</p>
-                    <div ref={previewCardRef} className="mt-3 rounded-[22px] border border-[#1b2530] bg-[#0d1218] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
-                      <div className="aspect-[16/11] max-h-[250px] overflow-hidden rounded-2xl border border-red-500/20 bg-[linear-gradient(180deg,rgba(16,22,31,0.95),rgba(8,12,18,0.95))] sm:max-h-[280px]">
-                        {imageBoard ? (
-                          <img
-                            src={imageBoard.imageUrl}
-                            alt={imageBoard.title}
-                            className="h-full w-full object-cover object-center"
-                            referrerPolicy="no-referrer"
-                            onError={() => setImageLoadError(true)}
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
-                            Diga: Carmen, mostre uma imagem de Paris ou faça uma imagem de um peixe de chapéu.
-                          </div>
-                        )}
-                      </div>
-
-                      {imageLoadError && (
-                        <p className="mt-3 text-xs text-red-300">
-                          A imagem não carregou nesta tentativa. Abra em Fonte ou faça uma nova consulta.
+                    <div className="mt-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="carmen-display text-sm font-semibold uppercase tracking-[0.08em] text-red-100">
+                          {imageBoard?.displayName || imageBoard?.title || "Sem referência visual"}
                         </p>
-                      )}
-
-                      <div className="mt-4 flex items-start justify-between gap-4">
-                        <div>
-                          <p className="carmen-display text-sm font-semibold uppercase tracking-[0.08em] text-red-200">
-                            {imageBoard?.displayName || imageBoard?.title || "Sem referência visual"}
-                          </p>
-                          <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">
-                            Origem: {imageBoard?.source || "aguardando consulta"}
-                          </p>
-                          {imageBoard?.question && (
-                            <p className="mt-2 text-xs text-slate-400">
-                              Pedido: {imageBoard.question}
-                            </p>
-                          )}
-                        </div>
-                        {imageBoard?.pageUrl && (
-                          <a
-                            href={imageBoard.pageUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-red-300"
-                          >
-                            <Download className="h-4 w-4" />
-                            Fonte
-                          </a>
-                        )}
+                        <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-red-100/45">
+                          Origem: {imageBoard?.source || "aguardando consulta"}
+                        </p>
                       </div>
+                      {imageBoard?.pageUrl && (
+                        <a
+                          href={imageBoard.pageUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-red-100"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Fonte
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </aside>
+            </aside>
         </main>
         </div>
       </div>
